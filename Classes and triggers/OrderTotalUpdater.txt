@@ -1,0 +1,56 @@
+public class OrderTotalUpdater {
+
+    public static void updateOrderTotal(Set<Id> orderIds) {
+
+        if (orderIds == null || orderIds.isEmpty()) {
+            return;
+        }
+
+        Map<Id, Decimal> orderTotals = new Map<Id, Decimal>();
+
+        // Calculate total price for each Order
+        for (AggregateResult ar : [
+            SELECT Order__c orderId,
+                   SUM(Total_Price__c) totalAmount
+            FROM AgriEdge_OrderItem__c
+            WHERE Order__c IN :orderIds
+            GROUP BY Order__c
+        ]) {
+
+            orderTotals.put(
+                (Id) ar.get('orderId'),
+                (Decimal) ar.get('totalAmount')
+            );
+        }
+
+        List<AgriEdge_Order__c> ordersToUpdate =
+            new List<AgriEdge_Order__c>();
+
+        // Get the related Orders
+        for (AgriEdge_Order__c order : [
+            SELECT Id, Total_Amount__c, Payment_Status__c
+            FROM AgriEdge_Order__c
+            WHERE Id IN :orderIds
+        ]) {
+
+            if (orderTotals.containsKey(order.Id)) {
+                order.Total_Amount__c = orderTotals.get(order.Id);
+            } else {
+                order.Total_Amount__c = 0;
+            }
+
+            // Set payment status
+            if (order.Total_Amount__c > 0) {
+                order.Payment_Status__c = 'Pending';
+            } else {
+                order.Payment_Status__c = 'Paid';
+            }
+
+            ordersToUpdate.add(order);
+        }
+
+        if (!ordersToUpdate.isEmpty()) {
+            update ordersToUpdate;
+        }
+    }
+}
